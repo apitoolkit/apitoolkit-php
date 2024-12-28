@@ -5,15 +5,16 @@ namespace Apitoolkit\Common;
 use OpenTelemetry\SDK\Trace\TracerProvider;
 use OpenTelemetry\API\Globals;
 use OpenTelemetry\Context\ScopeInterface;
+use OpenTelemetry\SDK\Trace\Span;
 use OpenTelemetry\SDK\Trace\SpanExporterInterface;
 use OpenTelemetry\SDK\Trace\SpanProcessorInterface;
 use OpenTelemetry\Trace\SpanInterface;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\HandlerStack;
-use GuzzleHttp\Middleware;
+use GuzzleHttp\Middleware as GuzzleMiddleware;
 use GuzzleHttp\Psr7\Request;
-use GuzzleHttp\Psr7\Response;
+use GuzzleHttp\Psr7\Response as GuzzleResponse;
 use JsonPath\JsonObject;
 use JsonPath\InvalidJsonException;
 
@@ -23,7 +24,7 @@ use JsonPath\InvalidJsonException;
 class Shared {
 
 public static function setAttributes(
-    SpanInterface $span,
+    Span $span,
     string $host,
     int $status_code,
     array $query_params,
@@ -32,7 +33,7 @@ public static function setAttributes(
     array $resp_headers,
     string $method,
     string $raw_url,
-    string $msg_id,
+    ?string $msg_id,
     string $url_path,
     string $req_body,
     string $resp_body,
@@ -64,11 +65,11 @@ public static function setAttributes(
         ]);
 
         foreach ($req_headers as $header => $value) {
-            $span->setAttribute("http.request.header.$header", self::redactHeader($value, $config['redact_headers'] ?? []));
+            $span->setAttribute("http.request.header.$header", self::redactHeader(self::toString($value), $config['redact_headers'] ?? []));
         }
 
         foreach ($resp_headers as $header => $value) {
-            $span->setAttribute("http.response.header.$header", self::redactHeader($value, $config['redact_headers'] ?? []));
+            $span->setAttribute("http.response.header.$header", self::redactHeader(self::toString($value), $config['redact_headers'] ?? []));
         }
     } catch (Exception $error) {
         $span->recordException($error);
@@ -112,27 +113,28 @@ public static function observeGuzzle($request, $options)
           $method = $request_info["method"];
           $pathParams = self::extractPathParams($request_info["url_path"], $request_info["url_no_query"]);
 
-          set_attributes(
+          self::setAttributes(
             $span,
             $host,
             $response->getStatusCode(),
             $queryParams,
             $pathParams,
             $reqHeaders,
-            $res_headers,
-            $parent_request->getMethod(),
+            $response->getHeaders(),
+            $method,
             $request_info["raw_url"],
-            $message_id,
+            null,
             $request_info["url_path"],
             $request_info["body"],
-            $resp_body,
+            $respBody,
             [],
             $options,
-            "GuzzleOutgoing"
+            "GuzzleOutgoing",
+            $msg_id,
         );
 
         } catch (\Throwable $th) {
-          //throw $th;
+          throw $th;
         }
 
         $newBodyStream = \GuzzleHttp\Psr7\Utils::streamFor($respBody);
@@ -168,6 +170,17 @@ private static function extractPathParams($pattern, $url)
     }
 
     return $params;
+}
+
+private static function toString($input): string
+{
+    if (is_string($input)) {
+        return $input;
+    }
+    if (is_array($input)) {
+        return implode(", ", $input); // Customize delimiter as needed
+    }
+    return strval($input); // Fallback to string conversion
 }
 
 private static function rootCause($err)
