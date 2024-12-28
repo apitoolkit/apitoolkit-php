@@ -1,8 +1,9 @@
 <?php
 
-namespace  Apitoolkit\Common;
+namespace Apitoolkit\Common;
 
-use OpenTelemetry\API\Trace\TracerProvider;
+use OpenTelemetry\SDK\Trace\TracerProvider;
+use OpenTelemetry\API\Globals;
 use OpenTelemetry\Context\ScopeInterface;
 use OpenTelemetry\SDK\Trace\SpanExporterInterface;
 use OpenTelemetry\SDK\Trace\SpanProcessorInterface;
@@ -13,11 +14,15 @@ use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
-
 use JsonPath\JsonObject;
 use JsonPath\InvalidJsonException;
 
-function setAttributes(
+
+
+
+class Shared {
+
+public static function setAttributes(
     SpanInterface $span,
     string $host,
     int $status_code,
@@ -51,19 +56,19 @@ function setAttributes(
             "http.request.path_params" => json_encode($path_params),
             "apitoolkit.sdk_type" => $sdk_type,
             "apitoolkit.parent_id" => $parent_id ?? "",
-            "http.request.body" => base64_encode(redactJSONFields($config['redact_request_body'] ?? [], $req_body)),
-            "http.response.body" => base64_encode(redactJSONFields($config['redact_response_body'] ?? [], $resp_body)),
+            "http.request.body" => base64_encode(self::redactJSONFields($config['redact_request_body'] ?? [], $req_body)),
+            "http.response.body" => base64_encode(self::redactJSONFields($config['redact_response_body'] ?? [], $resp_body)),
             "apitoolkit.errors" => json_encode($errors),
             "apitoolkit.service_version" => $config['serviceVersion'] ?? "",
             "apitoolkit.tags" => json_encode($config['tags'] ?? []),
         ]);
 
         foreach ($req_headers as $header => $value) {
-            $span->setAttribute("http.request.header.$header", redactHeader($value, $config['redact_headers'] ?? []));
+            $span->setAttribute("http.request.header.$header", self::redactHeader($value, $config['redact_headers'] ?? []));
         }
 
         foreach ($resp_headers as $header => $value) {
-            $span->setAttribute("http.response.header.$header", redactHeader($value, $config['redact_headers'] ?? []));
+            $span->setAttribute("http.response.header.$header", self::redactHeader($value, $config['redact_headers'] ?? []));
         }
     } catch (Exception $error) {
         $span->recordException($error);
@@ -72,14 +77,15 @@ function setAttributes(
     }
 }
 
-function observeGuzzle($request, $options)
+public static function observeGuzzle($request, $options)
 {
     $handlerStack = HandlerStack::create();
     $request_info = [];
     $span = null;
     $handlerStack->push(GuzzleMiddleware::mapRequest(function ($request) use (&$request_info, &$span, $options) {
-        $tracer = TracerProvider::getTracer("apitoolkit-http-tracer");
-        $span = $tracer->startSpan("apitoolkit-http-span");
+        $tracerProvider = Globals::tracerProvider();
+        $tracer = $tracerProvider->getTracer("apitoolkit-http-tracer");
+        $span = $tracer->spanBuilder('apitoolkit-http-span')->startSpan();
         $query = "";
         parse_str($request->getUri()->getQuery(), $query);
         $request_info = [
@@ -104,7 +110,7 @@ function observeGuzzle($request, $options)
           $queryParams = $request_info["query"];
           $reqHeaders = $request_info["headers"];
           $method = $request_info["method"];
-          $pathParams = extractPathParams($request_info["url_path"], $request_info["url_no_query"]);
+          $pathParams = self::extractPathParams($request_info["url_path"], $request_info["url_no_query"]);
 
           set_attributes(
             $span,
@@ -145,7 +151,7 @@ function observeGuzzle($request, $options)
 }
 
 
-function extractPathParams($pattern, $url)
+private static function extractPathParams($pattern, $url)
 {
     $patternSegments = explode('/', trim($pattern, '/'));
     $urlSegments = explode('/', trim($url, '/'));
@@ -164,7 +170,7 @@ function extractPathParams($pattern, $url)
     return $params;
 }
 
-function rootCause($err)
+private static function rootCause($err)
 {
     $cause = $err;
     while ($cause && property_exists($cause, 'cause')) {
@@ -173,10 +179,10 @@ function rootCause($err)
     return $cause;
 }
 
-function buildError($err)
+private static function buildError($err)
 {
     $errType = get_class($err);
-    $rootError = rootCause($err);
+    $rootError = self::rootCause($err);
     $rootErrorType = get_class($rootError);
 
     return [
@@ -189,9 +195,9 @@ function buildError($err)
     ];
 }
 
-function reportError($error, $request)
+public static function reportError($error, $request)
 {
-    $atError = buildError($error);
+    $atError = self::buildError($error);
     $apitoolkit = $request->apitoolkitData;
     $errors = $apitoolkit['errors'] ?? [];
     $errors[] = $atError;
@@ -199,17 +205,7 @@ function reportError($error, $request)
     $request->merge(['apitoolkitData' => $apitoolkit]);
 }
 
-// function redactHeaderFields(array $redactKeys, array $headerFields): array
-// {
-//     array_walk($headerFields, function (&$value, $key, $redactKeys) {
-//         if (in_array(strtolower($key), array_map('strtolower', $redactKeys))) {
-//             $value = ['[CLIENT_REDACTED]'];
-//         }
-//     }, $redactKeys);
-//     return $headerFields;
-// }
-
-function redactHeader(string $header, array $redact_headers): string
+private static function redactHeader(string $header, array $redact_headers): string
 {
     $lowercase_header = strtolower($header);
     if (in_array($lowercase_header, array_map('strtolower', $redact_headers)) || in_array($lowercase_header, ["cookies", "authorization"])) {
@@ -220,7 +216,7 @@ function redactHeader(string $header, array $redact_headers): string
 
 // redactJSONFields accepts a list of jsonpath's to redact, and a json object to redact from,
 // and returns the final json after the redacting has been done.
-function redactJSONFields(array $redactKeys, string $jsonStr): string
+private static function redactJSONFields(array $redactKeys, string $jsonStr): string
 {
     try {
         $obj = new JsonObject($jsonStr);
@@ -233,4 +229,6 @@ function redactJSONFields(array $redactKeys, string $jsonStr): string
         $obj->set($jsonPath, '[CLIENT_REDACTED]');
     }
     return $obj->getJson();
+}
+
 }

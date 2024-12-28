@@ -10,7 +10,7 @@
     "license": "mit",
     "autoload": {
         "psr-4": {
-            "Apitoolkit\\Common\\": "src/"
+            "Apitoolkit\\Common\\": "src/Common/"
         }
     },
     "authors": [
