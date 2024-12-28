@@ -1,5 +1,7 @@
 <?php
 
+namespace  Apitoolkit\Common;
+
 use OpenTelemetry\API\Trace\TracerProvider;
 use OpenTelemetry\Context\ScopeInterface;
 use OpenTelemetry\SDK\Trace\SpanExporterInterface;
