@@ -5,7 +5,8 @@
     "require": {
         "guzzlehttp/guzzle": "^7.0",
         "galbar/jsonpath": "^3.0",
-        "open-telemetry/api": "^1.0"
+        "open-telemetry/api": "^1.0",
+        "open-telemetry/sdk": "^1.1"
     },
     "license": "mit",
     "autoload": {
