@@ -78,7 +78,7 @@ public static function setAttributes(
     }
 }
 
-public static function observeGuzzle($request, $options)
+public static function observeGuzzle($options, $msgId)
 {
     $handlerStack = HandlerStack::create();
     $request_info = [];
@@ -102,9 +102,7 @@ public static function observeGuzzle($request, $options)
         return $request;
     }));
 
-    $handlerStack->push(GuzzleMiddleware::mapResponse(function ($response) use (&$request_info, &$span, $request, $options) {
-        $apitoolkit = $request->apitoolkitData;
-        $msg_id = $apitoolkit['msg_id'];
+    $handlerStack->push(GuzzleMiddleware::mapResponse(function ($response) use (&$request_info, &$span, $msgId, $options) {
         $respBody = $response->getBody()->getContents();
         try {
           $host = $request_info["host"];
@@ -130,7 +128,7 @@ public static function observeGuzzle($request, $options)
             [],
             $options,
             "GuzzleOutgoing",
-            $msg_id,
+            $msgId,
         );
 
         } catch (\Throwable $th) {
@@ -208,14 +206,10 @@ private static function buildError($err)
     ];
 }
 
-public static function reportError($error, $request)
+public static function reportError($error, $client)
 {
     $atError = self::buildError($error);
-    $apitoolkit = $request->apitoolkitData;
-    $errors = $apitoolkit['errors'] ?? [];
-    $errors[] = $atError;
-    $apitoolkit['errors'] = $errors;
-    $request->merge(['apitoolkitData' => $apitoolkit]);
+    $client->addError($atError);
 }
 
 private static function redactHeader(string $header, array $redact_headers): string
