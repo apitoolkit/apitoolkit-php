@@ -23,7 +23,7 @@ use JsonPath\InvalidJsonException;
 
 class Shared {
 
-public static function setAttributes(
+  public static function setAttributes(
     Span $span,
     string $host,
     int $status_code,
@@ -57,19 +57,19 @@ public static function setAttributes(
             "http.request.path_params" => json_encode($path_params),
             "apitoolkit.sdk_type" => $sdk_type,
             "apitoolkit.parent_id" => $parent_id ?? "",
-            "http.request.body" => base64_encode(self::redactJSONFields($config['redact_request_body'] ?? [], $req_body)),
-            "http.response.body" => base64_encode(self::redactJSONFields($config['redact_response_body'] ?? [], $resp_body)),
+            "http.request.body" => base64_encode(self::redactJSONFields($config['redactRequestBody'] ?? [], $req_body)),
+            "http.response.body" => base64_encode(self::redactJSONFields($config['redactResponseBody'] ?? [], $resp_body)),
             "apitoolkit.errors" => json_encode($errors),
             "apitoolkit.service_version" => $config['serviceVersion'] ?? "",
             "apitoolkit.tags" => json_encode($config['tags'] ?? []),
         ]);
 
         foreach ($req_headers as $header => $value) {
-            $span->setAttribute("http.request.header.$header", self::redactHeader(self::toString($value), $config['redact_headers'] ?? []));
+            $span->setAttribute("http.request.header.$header", self::redactHeader(self::toString($value), $config['redactHeaders'] ?? []));
         }
 
         foreach ($resp_headers as $header => $value) {
-            $span->setAttribute("http.response.header.$header", self::redactHeader(self::toString($value), $config['redact_headers'] ?? []));
+            $span->setAttribute("http.response.header.$header", self::redactHeader(self::toString($value), $config['redactHeaders'] ?? []));
         }
     } catch (Exception $error) {
         $span->recordException($error);
@@ -77,7 +77,6 @@ public static function setAttributes(
         $span->end();
     }
 }
-
 public static function observeGuzzle($options, $msgId)
 {
     $handlerStack = HandlerStack::create();
